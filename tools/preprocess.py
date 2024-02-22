@@ -10,13 +10,22 @@ from tqdm import tqdm
 
 from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.structures import Pointclouds
+from pytorch3d.renderer import (
+    FoVPerspectiveCameras,
+    MeshRenderer,
+    MeshRasterizer,
+    RasterizationSettings,
+    BlendParams,
+)
+from pytorch3d.renderer.mesh.shader import SoftDepthShader
 
 import _init_paths
 
-from configs         import cfg, update_config
-from dataset.build   import build_dataset
+from configs import cfg, update_config
+from dataset.build import build_dataset
 from utils.visualize import *
-from utils.libmesh   import check_mesh_contains
+from utils.libmesh import check_mesh_contains
+from utils.utils import load_camera_intrinsics
 
 
 def parse_args():
@@ -33,12 +42,20 @@ def parse_args():
                         default=None,
                         nargs=argparse.REMAINDER)
 
+    parser.add_argument("--not_skip_surface_points",
+                        help="Prepare depth maps for the SE3PR dataset",
+                        action="store_false")
+
+    parser.add_argument("--not_skip_occupancy",
+                        help="Prepare depth maps for the SE3PR dataset",
+                        action="store_false")
+
     args = parser.parse_args()
 
     return args
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
 
     args = parse_args()
     update_config(cfg, args)
@@ -50,6 +67,7 @@ if __name__=='__main__':
 
     # -=-=-=-=-=- CREATE DATASET STRUCTURE -=-=-=-=-=- #
     dataset = build_dataset(cfg, 'all')
+    device = "cuda"
 
     # -=-=-=-=-=- CREATE PCL FROM MESH SURFACE -=-=-=-=-=- #
     N = 100000
@@ -57,27 +75,29 @@ if __name__=='__main__':
         d = dataset.datasets[idx]
 
         # ---------- (1) Sample points on the surface
-        points = sample_points_from_meshes(d.mesh, num_samples=N) # [1 x N x 3]
-        np.savez(str(d.path_to_surface_points), points=points.numpy())
+        if not args.not_skip_surface_points:
+            points = sample_points_from_meshes(d.mesh, num_samples=N)  # [1 x N x 3]
+            np.savez(str(d.path_to_surface_points), points=points.numpy())
 
-        plot_3dpoints(
-            Pointclouds(points),
-            savefn=str(d.path_to_surface_points).replace('npz', 'jpg')
-        )
+            plot_3dpoints(
+                Pointclouds(points),
+                savefn=str(d.path_to_surface_points).replace('npz', 'jpg')
+            )
 
         # ---------- (2) Sample points inside the surface
-        mesh_gt = trimesh.load(d.path_to_mesh_file, force='mesh')
+        if not args.not_skip_occupancy:
+            mesh_gt = trimesh.load(d.path_to_mesh_file, force='mesh')
 
-        # assert mesh_gt.is_watertight, f'Model {d.tag} is not watertight'
+            # assert mesh_gt.is_watertight, f'Model {d.tag} is not watertight'
 
-        points = np.random.rand(N, 3) - 0.5
-        occupancy = check_mesh_contains(mesh_gt, points)
-        np.savez(str(d.path_to_occupancy), points=points, labels=occupancy)
+            points = np.random.rand(N, 3) - 0.5
+            occupancy = check_mesh_contains(mesh_gt, points)
+            np.savez(str(d.path_to_occupancy), points=points, labels=occupancy)
 
-        plot_occupancy_labels(
-            points, occupancy,
-            savefn=str(d.path_to_occupancy).replace('npz', 'jpg')
-        )
+            plot_occupancy_labels(
+                points, occupancy,
+                savefn=str(d.path_to_occupancy).replace('npz', 'jpg')
+            )
 
         # # ---------- Visualize certain models
         # if d.tag == 'chandra_v09':
@@ -85,5 +105,4 @@ if __name__=='__main__':
         #         points = data['points']
 
         #     plot_3dpoints(Pointclouds(torch.from_numpy(points)))
-
 
