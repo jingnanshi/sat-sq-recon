@@ -24,7 +24,7 @@ _C.AMP             = False                                          # Use mixed 
 _C.AMP_DTYPE       = "float16"
 _C.AUTO_RESUME     = True                                           # Pick up from the last available training session?
 _C.PIN_MEMORY      = True
-_C.SEED            = None                                           # Random seed. If None, seed is determined based on computer time
+_C.SEED            = 42                                           # Random seed. If None, seed is determined based on computer time
 _C.VERBOSE         = False
 
 # cudNN related params
@@ -66,7 +66,7 @@ _C.DATASET.SPLIT_CSV = 'splits.csv'
 # Model-related parameters
 # ------------------------------------------------------------------------------ #
 _C.MODEL = CN()
-_C.MODEL.PRETRAIN_FILE = None
+_C.MODEL.PRETRAIN_FILE = ""
 
 # Model spec.
 _C.MODEL.LATENT_DIM         = 128
@@ -118,7 +118,7 @@ _C.TRAIN.BEGIN_EPOCH     = 0
 _C.TRAIN.END_EPOCH       = 100
 # _C.TRAIN.STEPS_PER_EPOCH = 500
 _C.TRAIN.VALID_FREQ      = 20
-_C.TRAIN.VALID_FRACTION  = None                              # Fraction of validation set on which inference is conducted
+_C.TRAIN.VALID_FRACTION  = float("nan")                              # Fraction of validation set on which inference is conducted
 
 # - Batches
 _C.TRAIN.BATCH_SIZE_PER_GPU = 16                            # Batch size PER GPU, NOT across all GPUs!

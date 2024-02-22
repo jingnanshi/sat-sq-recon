@@ -23,7 +23,7 @@ class SatReconDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, split='train', transforms=None):
         super(SatReconDataset, self).__init__()
 
-        assert split in ['train', 'validation', 'test']
+        assert split in ['train', 'validation', 'test', 'all']
 
         self.root_dir   = Path(cfg.DATASET.ROOT) / cfg.DATASET.DATANAME
         self.split      = split
@@ -42,10 +42,15 @@ class SatReconDataset(torch.utils.data.Dataset):
         if cfg.DATASET.SPLIT_CSV is not None:
             csv = pd.read_csv(str(self.root_dir / cfg.DATASET.SPLIT_CSV), header=None)
 
-            temp = 'train' if split == 'train' or split == 'validation' else 'test'
-            tags = [
-                csv.iloc[idx, 0] for idx in range(len(csv)) if csv.iloc[idx, 1] == temp
-            ]
+            if split == 'all':
+                tags = [
+                    csv.iloc[idx, 0] for idx in range(len(csv))
+                ]
+            else:
+                temp = 'train' if split == 'train' or split == 'validation' else 'test'
+                tags = [
+                    csv.iloc[idx, 0] for idx in range(len(csv)) if csv.iloc[idx, 1] == temp
+                ]
         else:
             tags = None
 

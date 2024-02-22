@@ -1,4 +1,4 @@
-ROOT: '/media/shared/Jeff/CAESAR/satellite-sq-recon'
+ROOT: '/home/jnshi/code/sat-sq-recon'
 OUTPUT_DIR: 'output'
 LOG_DIR: 'log'
 LOG_TENSORBOARD: True
@@ -17,7 +17,7 @@ CUDNN:
   DETERMINISTIC: False
   ENABLED: True
 DATASET:
-  ROOT: '/home/jeffpark/SLAB/Dataset'
+  ROOT: '/mnt/jnshi_data/datasets/hydra_objects_data'
   DATANAME: 'spe3r'
   SPLIT_CSV: 'splits.csv'
   CAMERA: 'camera.json'

@@ -45,11 +45,11 @@ if __name__=='__main__':
 
     # Don't use splits.csv to prepare for all models
     cfg.defrost()
-    cfg.DATASET.SPLIT_CSV = None
+    cfg.DATASET.SPLIT_CSV = "splits.csv"
     cfg.freeze()
 
     # -=-=-=-=-=- CREATE DATASET STRUCTURE -=-=-=-=-=- #
-    dataset = build_dataset(cfg, 'train')
+    dataset = build_dataset(cfg, 'all')
 
     # -=-=-=-=-=- CREATE PCL FROM MESH SURFACE -=-=-=-=-=- #
     N = 100000
