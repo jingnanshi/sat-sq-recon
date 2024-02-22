@@ -40,6 +40,7 @@ class BaseModelDataset(object):
         # Mesh
         self.path_to_mesh_file = Path(path_to_model_dir) / "models" / "model_normalized.obj"
         self._mesh_gt = mesh
+        self.model_name = path_to_model_dir.name
 
         # Image & pose paths
         self.path_to_image_dir = Path(path_to_model_dir) / image_dir

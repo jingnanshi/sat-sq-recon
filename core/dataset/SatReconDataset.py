@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class SatReconDataset(torch.utils.data.Dataset):
     ''' torch Dataset class to be loaded
     '''
-    def __init__(self, cfg, split='train', transforms=None):
+    def __init__(self, cfg, split='train', transforms=None, output_mesh=False):
         super(SatReconDataset, self).__init__()
 
         assert split in ['train', 'validation', 'test', 'all']
@@ -29,6 +29,7 @@ class SatReconDataset(torch.utils.data.Dataset):
         self.split      = split
         self.is_train   = split == 'train'
         self.transforms = transforms
+        self.output_mesh = output_mesh
 
         # Misc
         self.rgb = True
@@ -192,8 +193,12 @@ class SatReconDataset(torch.utils.data.Dataset):
             'occ_labels':  occ_labels,
             'occ_weights': occ_weights,
             'trans':  trans,
-            'rot':    rot
+            'rot':    rot,
+            'model_names': dataset.model_name,
         }
+
+        if self.output_mesh:
+            batch["mesh"] = dataset.mesh
 
         return batch
 
