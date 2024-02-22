@@ -2,6 +2,7 @@ import numpy as np
 import argparse
 import trimesh
 from tqdm import tqdm
+import png
 import matplotlib.pyplot as plt
 
 from pytorch3d.ops import sample_points_from_meshes
@@ -10,6 +11,7 @@ import torchvision.transforms
 from pytorch3d.renderer import (
     FoVPerspectiveCameras,
     MeshRenderer,
+    MeshRendererWithFragments,
     MeshRasterizer,
     RasterizationSettings,
     BlendParams,
@@ -23,6 +25,41 @@ from dataset.build import build_dataset, get_dataloader
 from utils.visualize import *
 from utils.libmesh import check_mesh_contains
 from utils.utils import load_camera_intrinsics
+
+
+def depth_to_point_cloud_map_batched(depth, intrinsics, grid_x, grid_y):
+    """Return point cloud in (B, 3, H, W)"""
+    B = intrinsics.shape[0]
+    # calcualte the x, y (lots of broadcasting)
+    x = (
+            (grid_x[None, None, ...] - intrinsics[:, 0, 0, 2].reshape((B, 1, 1, 1)))
+            * depth
+            / intrinsics[:, 0, 0, 0].reshape(B, 1, 1, 1)
+    )
+    y = (
+            (grid_y[None, None, ...] - intrinsics[:, 0, 1, 2].reshape((B, 1, 1, 1)))
+            * depth
+            / intrinsics[:, 0, 1, 1].reshape(B, 1, 1, 1)
+    )
+    pts = torch.cat((x, y, depth), dim=1)
+    return pts
+
+
+def save_depth(path, im):
+    """Saves a depth image (16-bit) to a PNG file.
+
+    :param path: Path to the output depth image file.
+    :param im: ndarray with the depth image to save.
+    """
+    if path.split(".")[-1].lower() != "png":
+        raise ValueError("Only PNG format is currently supported.")
+
+    im_uint16 = np.round(im).astype(np.uint16)
+
+    # PyPNG library can save 16-bit PNG and is faster than imageio.imwrite().
+    w_depth = png.Writer(im.shape[1], im.shape[0], greyscale=True, bitdepth=16)
+    with open(path, "wb") as f:
+        w_depth.write(f, np.reshape(im_uint16, (-1, im.shape[1])))
 
 
 def parse_args():
@@ -60,6 +97,7 @@ if __name__ == '__main__':
     # -=-=-=-=-=- CREATE DATASET STRUCTURE -=-=-=-=-=- #
     dataset = build_dataset(cfg, 'all')
     all_loader = get_dataloader(cfg, split='all', output_mesh=True)
+    zfar = 1000
     device = "cuda"
 
     # Renderer
@@ -68,7 +106,7 @@ if __name__ == '__main__':
     pcamera = FoVPerspectiveCameras(
         fov=camera['horizontalFOV'], degrees=False,
         device=device,
-        zfar=1000,
+        zfar=zfar,
     )
     raster_settings = RasterizationSettings(
         image_size=128, blur_radius=0.0,
@@ -96,13 +134,16 @@ if __name__ == '__main__':
             device), \
             batch['mask'].to(device), batch['image'].to(device)
 
+        # depth rendering
         rot_render = torch.bmm(gt_rot.transpose(1, 2), Rz.repeat(gt_rot.shape[0], 1, 1)).detach()
         trans_render = gt_trans
         depths = depth_renderer(gt_mesh, R=rot_render, T=trans_render)
-        depths[depths == 100] = 0
-        masked_depths = depths * gt_masks.unsqueeze(-1)
+
+        # reset unknown depths to zero instead of zfar
+        depths[depths == zfar] = 0
 
         if args.visualize:
+            masked_depths = depths * gt_masks.unsqueeze(-1)
             for bid in range(B):
                 plt.figure(figsize=(10, 10))
                 plt.imshow((masked_depths[bid, ..., 0] / depths.max() * 255).cpu().numpy(), cmap=plt.cm.binary)
@@ -113,3 +154,20 @@ if __name__ == '__main__':
                 plt.imshow((torch.permute(rgb[bid, :3, ...], (1, 2, 0))).cpu().numpy())
                 plt.axis("off")
                 plt.show()
+
+        # TODO: get NOCS
+        pc = depth_to_point_cloud_map_batched(
+            torch.permute(depths, (2, 0, 1)),
+            torch.as_tensor(state["camera"]["K"]).unsqueeze(0).unsqueeze(0),
+            grid_x=depth_map_grid_x,
+            grid_y=depth_map_grid_y,
+        )
+
+        # TODO: save depth images
+        depth_scale = 65536 / zfar
+        processed_depths = depths * depth_scale
+
+        # TODO: save NOCS images
+
+        # for bid in range(B):
+        #    save_depth(None, depths[bid, ..., 0].cpu().numpy())
