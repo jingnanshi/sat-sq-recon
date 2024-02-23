@@ -138,6 +138,9 @@ def parse_args():
                         help="Use this flag to turn on visualization",
                         action='store_true')
 
+    parser.add_argument('--model_name', help="A specific object name to restrict dataset",
+                        default=None, type=str)
+
     args = parser.parse_args()
 
     return args
@@ -157,8 +160,8 @@ if __name__ == '__main__':
 
     # -=-=-=-=-=- CREATE DATASET STRUCTURE -=-=-=-=-=- #
     dataset = build_dataset(cfg, 'all')
-    all_loader = get_dataloader(cfg, split='all', output_mesh=True)
-    zfar = 1000
+    all_loader = get_dataloader(cfg, split='all', output_mesh=True, model_name=args.model_name)
+    zfar = 100
     image_size = 256
     depth_scale = 65536 / zfar
     nocs_scale = 65536

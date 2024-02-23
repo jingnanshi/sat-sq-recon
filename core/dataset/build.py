@@ -47,7 +47,7 @@ def _seed_worker(worker_id):
     random.seed(worker_seed)
 
 
-def build_dataset(cfg, split='train', output_mesh=True):
+def build_dataset(cfg, split='train', output_mesh=True, model_name=None):
     # TODO: create dedicated image transform script later
     transforms = [
         A.Resize(cfg.DATASET.IMAGE_SIZE[1], cfg.DATASET.IMAGE_SIZE[0]),
@@ -56,12 +56,12 @@ def build_dataset(cfg, split='train', output_mesh=True):
     ]
     transforms = A.Compose(transforms)
 
-    dataset = SatReconDataset(cfg, split, transforms=transforms, output_mesh=output_mesh)
+    dataset = SatReconDataset(cfg, split, transforms=transforms, output_mesh=output_mesh, model_name=model_name)
 
     return dataset
 
 
-def get_dataloader(cfg, split='train', distributed=False, output_mesh=True):
+def get_dataloader(cfg, split='train', distributed=False, output_mesh=True, model_name=None):
     # TODO: Temporary
     assert not distributed
 
@@ -82,7 +82,7 @@ def get_dataloader(cfg, split='train', distributed=False, output_mesh=True):
         shuffle = False
         num_workers = 0
 
-    dataset = build_dataset(cfg, split, output_mesh=output_mesh)
+    dataset = build_dataset(cfg, split, output_mesh=output_mesh, model_name=model_name)
 
     if output_mesh:
         data_loader = torch.utils.data.DataLoader(
