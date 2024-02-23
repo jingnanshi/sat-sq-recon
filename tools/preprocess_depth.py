@@ -1,5 +1,7 @@
 import numpy as np
 import argparse
+
+import torch
 import trimesh
 from tqdm import tqdm
 import png
@@ -15,7 +17,9 @@ from pytorch3d.renderer import (
     MeshRasterizer,
     RasterizationSettings,
     BlendParams,
+    TexturesVertex,
 )
+from pytorch3d.renderer.blending import hard_rgb_blend
 from pytorch3d.renderer.mesh.shader import SoftDepthShader, HardDepthShader
 
 import _init_paths
@@ -25,6 +29,41 @@ from dataset.build import build_dataset, get_dataloader
 from utils.visualize import *
 from utils.libmesh import check_mesh_contains
 from utils.utils import load_camera_intrinsics
+
+
+class HardNOCSShader(torch.nn.Module):
+    """ Shader that ignores lighting to render NOCS values """
+
+    def __init__(
+            self, device="cpu", cameras=None, blend_params=None
+    ):
+        super().__init__()
+        self.cameras = cameras
+        self.blend_params = blend_params if blend_params is not None else BlendParams()
+
+    def forward(self, fragments, meshes, **kwargs) -> torch.Tensor:
+        cameras = kwargs.get("cameras", self.cameras)
+        if cameras is None:
+            msg = "Cameras must be specified either at initialization \
+                or in the forward pass of HardNOCSShader"
+            raise ValueError(msg)
+        # get renderer output
+        blend_params = kwargs.get("blend_params", self.blend_params)
+        texels = meshes.sample_textures(fragments)
+        images = hard_rgb_blend(texels, fragments, blend_params)
+        return images
+
+
+def make_NOCS_vertex_textures(meshes):
+    """ Make NOCS texture for rendering NOCS maps """
+    mesh_verts = meshes.verts_list()
+    with torch.no_grad():
+        nocs_tex_tensor = torch.stack(mesh_verts).contiguous().clone()
+        # shift by 0.5 b/c model is normalized within [-0.5, 0.5]
+        # we need the nocs map be within [0, 1]
+        nocs_tex_tensor = nocs_tex_tensor + 0.5
+    nocs_textures = TexturesVertex(verts_features=nocs_tex_tensor)
+    return nocs_textures
 
 
 def depth_to_point_cloud_map_batched(depth, intrinsics, grid_x, grid_y):
@@ -98,6 +137,9 @@ if __name__ == '__main__':
     dataset = build_dataset(cfg, 'all')
     all_loader = get_dataloader(cfg, split='all', output_mesh=True)
     zfar = 1000
+    image_size = 256
+    depth_scale = 65536 / zfar
+    nocs_scale = 65536
     device = "cuda"
 
     # Renderer
@@ -109,13 +151,20 @@ if __name__ == '__main__':
         zfar=zfar,
     )
     raster_settings = RasterizationSettings(
-        image_size=128, blur_radius=0.0,
+        image_size=image_size, blur_radius=0.0,
     )
 
     blend_params = BlendParams(sigma=sigma)
     depth_renderer = MeshRenderer(
         rasterizer=MeshRasterizer(cameras=pcamera, raster_settings=raster_settings),
         shader=HardDepthShader(
+            device="cuda", cameras=pcamera, blend_params=blend_params
+        ),
+    )
+
+    nocs_renderer = MeshRenderer(
+        rasterizer=MeshRasterizer(cameras=pcamera, raster_settings=raster_settings),
+        shader=HardNOCSShader(
             device="cuda", cameras=pcamera, blend_params=blend_params
         ),
     )
@@ -134,9 +183,17 @@ if __name__ == '__main__':
             device), \
             batch['mask'].to(device), batch['image'].to(device)
 
-        # depth rendering
+        # rotation and translation for rendering
         rot_render = torch.bmm(gt_rot.transpose(1, 2), Rz.repeat(gt_rot.shape[0], 1, 1)).detach()
         trans_render = gt_trans
+
+        # nocs rendering
+        nocs_textures = make_NOCS_vertex_textures(gt_mesh)
+        nocs_mesh = gt_mesh.clone()
+        nocs_mesh.textures = nocs_textures
+        nocs = nocs_renderer(nocs_mesh, R=rot_render, T=trans_render)
+
+        # depth rendering
         depths = depth_renderer(gt_mesh, R=rot_render, T=trans_render)
 
         # reset unknown depths to zero instead of zfar
@@ -156,15 +213,8 @@ if __name__ == '__main__':
                 plt.show()
 
         # TODO: get NOCS
-        pc = depth_to_point_cloud_map_batched(
-            torch.permute(depths, (2, 0, 1)),
-            torch.as_tensor(state["camera"]["K"]).unsqueeze(0).unsqueeze(0),
-            grid_x=depth_map_grid_x,
-            grid_y=depth_map_grid_y,
-        )
 
         # TODO: save depth images
-        depth_scale = 65536 / zfar
         processed_depths = depths * depth_scale
 
         # TODO: save NOCS images
