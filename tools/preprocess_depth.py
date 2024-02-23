@@ -176,7 +176,7 @@ if __name__ == '__main__':
         zfar=zfar,
     )
     raster_settings = RasterizationSettings(
-        image_size=image_size, blur_radius=0.0,
+        image_size=image_size, blur_radius=0.0, bin_size=0,
     )
 
     blend_params = BlendParams(sigma=sigma)
