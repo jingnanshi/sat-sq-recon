@@ -12,7 +12,6 @@ from pytorch3d.io import load_objs_as_meshes
 
 logger = logging.getLogger(__name__)
 
-
 '''
 Dataset structure is as follows:
 
@@ -28,13 +27,17 @@ e.g., Dataset = SPE3R,                   tag = Aquarius
       Dataset = ShapeNetCoreV2/04401088, tag = 1a0fab14a11b39d1a5295d0078b5d60
 '''
 
+
 class BaseModelDataset(object):
     ''' Base python class to hold all info (e.g., images, meshes) for EACH model
     '''
+
     def __init__(
-        self, tag, path_to_model_dir, image_dir="images", mask_dir="masks", mesh=None, image_size=(256, 256)
+            self, tag, path_to_model_dir, image_dir="images", mask_dir="masks", depth_dir="depths", nocs_dir="nocs",
+            mesh=None,
+            image_size=(256, 256)
     ):
-        self.tag        = tag
+        self.tag = tag
         self.image_size = image_size
 
         # Mesh
@@ -44,12 +47,19 @@ class BaseModelDataset(object):
 
         # Image & pose paths
         self.path_to_image_dir = Path(path_to_model_dir) / image_dir
-        self.path_to_mask_dir  = Path(path_to_model_dir) / mask_dir
-        path_to_pose_json      = Path(path_to_model_dir) / "labels.json"
+        self.path_to_mask_dir = Path(path_to_model_dir) / mask_dir
+        self.path_to_depth_dir = Path(path_to_model_dir) / depth_dir
+        if not self.path_to_depth_dir.exists():
+            self.path_to_depth_dir.mkdir(parents=True)
+        self.path_to_nocs_dir = Path(path_to_model_dir) / nocs_dir
+        if not self.path_to_nocs_dir.exists():
+            self.path_to_nocs_dir.mkdir(parents=True)
+
+        path_to_pose_json = Path(path_to_model_dir) / "labels.json"
 
         # Other paths
         self.path_to_surface_points = Path(path_to_model_dir) / "surface_points.npz"
-        self.path_to_occupancy      = Path(path_to_model_dir) / "occupancy_points.npz"
+        self.path_to_occupancy = Path(path_to_model_dir) / "occupancy_points.npz"
 
         # Read .json
         if path_to_pose_json.exists():
@@ -84,6 +94,7 @@ class BaseModelDataset(object):
 class SPE3R(object):
     ''' Creates BaseModelDataset for each model
     '''
+
     def __init__(self, cfg, tags=None):
 
         base_dir = Path(cfg.DATASET.ROOT) / cfg.DATASET.DATANAME
@@ -98,15 +109,15 @@ class SPE3R(object):
 
         if tags:
             # Custom list of tags (e.g., those in train & val)
-            self._tags  = [t for t in tags if t in tags_in_dir]
+            self._tags = [t for t in tags if t in tags_in_dir]
             self._paths = [p for p in all_paths if p.name in self._tags]
         else:
-            self._tags  = tags_in_dir
+            self._tags = tags_in_dir
             self._paths = all_paths
 
         # Misc.
-        self.image_dir  = cfg.DATASET.IMAGE_DIR
-        self.mask_dir   = cfg.DATASET.MASK_DIR
+        self.image_dir = cfg.DATASET.IMAGE_DIR
+        self.mask_dir = cfg.DATASET.MASK_DIR
         self.image_size = cfg.DATASET.IMAGE_SIZE
 
         # Pre-load

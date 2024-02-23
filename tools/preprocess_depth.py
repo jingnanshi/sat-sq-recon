@@ -90,7 +90,7 @@ def save_depth(path, im):
     :param path: Path to the output depth image file.
     :param im: ndarray with the depth image to save.
     """
-    if path.split(".")[-1].lower() != "png":
+    if path.name.split(".")[-1].lower() != "png":
         raise ValueError("Only PNG format is currently supported.")
 
     im_uint16 = np.round(im).astype(np.uint16)
@@ -99,6 +99,25 @@ def save_depth(path, im):
     w_depth = png.Writer(im.shape[1], im.shape[0], greyscale=True, bitdepth=16)
     with open(path, "wb") as f:
         w_depth.write(f, np.reshape(im_uint16, (-1, im.shape[1])))
+
+
+def save_nocs(path, im):
+    """Saves a NOCS image (16-bit) to a PNG file.
+
+    :param path: Path to the output NOCS image file.
+    :param im: ndarray with the NOCS image to save. Dimension: (H, W, C).
+    """
+    if path.name.split(".")[-1].lower() != "png":
+        raise ValueError("Only PNG format is currently supported.")
+
+    im_uint16 = np.round(im).astype(np.uint16)
+    im_list = im_uint16.reshape(-1, im_uint16.shape[1] * im_uint16.shape[2]).tolist()
+
+    # PyPNG library can save 16-bit PNG and is faster than imageio.imwrite().
+    w_nocs = png.Writer(width=im.shape[1], height=im.shape[0], greyscale=False, bitdepth=16)
+
+    with open(path, "wb") as f:
+        w_nocs.write(f, im_list)
 
 
 def parse_args():
@@ -182,9 +201,9 @@ if __name__ == '__main__':
         print(f"at step={step}")
         B = batch['image'].shape[0]
 
-        gt_rot, gt_trans, gt_mesh, gt_masks, rgb = batch["rot"].to(device), batch["trans"].to(device), batch["mesh"].to(
-            device), \
-            batch['mask'].to(device), batch['image'].to(device)
+        gt_rot, gt_trans, gt_mesh, gt_masks, rgb, model_idxs, base_filenames = batch["rot"].to(device), batch[
+            "trans"].to(device), batch["mesh"].to(device), batch['mask'].to(device), \
+            batch['image'].to(device), batch['model_idx'], batch['base_filename']
 
         # rotation and translation for rendering
         rot_render = torch.bmm(gt_rot.transpose(1, 2), Rz.repeat(gt_rot.shape[0], 1, 1)).detach()
@@ -198,6 +217,7 @@ if __name__ == '__main__':
         nocs[:, :, :, -1] = gt_masks
 
         # depth rendering
+        # (N, H, W, K)
         depths = depth_renderer(gt_mesh, R=rot_render, T=trans_render)
 
         # reset unknown depths to zero instead of zfar
@@ -224,10 +244,21 @@ if __name__ == '__main__':
                 plt.axis("off")
                 plt.show()
 
-        # TODO: save depth images
+        # save nocs and depths
         processed_depths = depths * depth_scale
+        processed_nocs = nocs[:, :, :, :3] * nocs_scale
+        processed_nocs[processed_nocs < 0] = 0
+        processed_nocs[processed_nocs > 65536] = 65536
 
-        # TODO: save NOCS images
+        for bid in range(B):
+            bname = base_filenames[bid]
 
-        # for bid in range(B):
-        #    save_depth(None, depths[bid, ..., 0].cpu().numpy())
+            # save depth
+            path_to_depth = all_loader.dataset.datasets[model_idxs[bid]].path_to_depth_dir
+            depth_path = path_to_depth / f"{base_filenames[bid]}.png"
+            save_depth(depth_path, processed_depths[bid, ..., 0].cpu().numpy())
+
+            # save nocs
+            path_to_nocs = all_loader.dataset.datasets[model_idxs[bid]].path_to_nocs_dir
+            nocs_path = path_to_nocs / f"{base_filenames[bid]}.png"
+            save_nocs(nocs_path, processed_nocs[bid, ..., :3].cpu().numpy())

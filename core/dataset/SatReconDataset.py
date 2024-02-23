@@ -200,6 +200,7 @@ class SatReconDataset(torch.utils.data.Dataset):
         if self.output_mesh:
             batch["mesh"] = dataset.mesh
             batch['model_idx'] = modelidx
+            batch['base_filename'] = dataset.labels[imgidx]["filename"]
 
         return batch
 
