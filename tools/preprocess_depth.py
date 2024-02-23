@@ -198,7 +198,6 @@ if __name__ == '__main__':
 
     # iterate through all images
     for step, batch in tqdm(enumerate(all_loader), total=len(all_loader)):
-        print(f"at step={step}")
         B = batch['image'].shape[0]
 
         gt_rot, gt_trans, gt_mesh, gt_masks, rgb, model_idxs, base_filenames = batch["rot"].to(device), batch[
