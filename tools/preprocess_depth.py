@@ -131,6 +131,8 @@ if __name__ == '__main__':
     # Don't use splits.csv to prepare for all models
     cfg.defrost()
     cfg.DATASET.SPLIT_CSV = "splits.csv"
+    # do not scale the image down
+    cfg.DATASET.IMAGE_SIZE = (256, 256)
     cfg.freeze()
 
     # -=-=-=-=-=- CREATE DATASET STRUCTURE -=-=-=-=-=- #
@@ -162,10 +164,11 @@ if __name__ == '__main__':
         ),
     )
 
+    nocs_blend_params = BlendParams(sigma=sigma, background_color=(0, 0, 0))
     nocs_renderer = MeshRenderer(
         rasterizer=MeshRasterizer(cameras=pcamera, raster_settings=raster_settings),
         shader=HardNOCSShader(
-            device="cuda", cameras=pcamera, blend_params=blend_params
+            device="cuda", cameras=pcamera, blend_params=nocs_blend_params,
         ),
     )
 
@@ -192,6 +195,7 @@ if __name__ == '__main__':
         nocs_mesh = gt_mesh.clone()
         nocs_mesh.textures = nocs_textures
         nocs = nocs_renderer(nocs_mesh, R=rot_render, T=trans_render)
+        nocs[:, :, :, -1] = gt_masks
 
         # depth rendering
         depths = depth_renderer(gt_mesh, R=rot_render, T=trans_render)
@@ -201,6 +205,9 @@ if __name__ == '__main__':
 
         if args.visualize:
             masked_depths = depths * gt_masks.unsqueeze(-1)
+            masked_nocs = nocs[:, :, :, :3] * gt_masks.unsqueeze(-1)
+            denorm_rgb = rgb * torch.tensor([0.229, 0.224, 0.225], device=device).reshape(1, 3, 1, 1) + torch.tensor(
+                [0.485, 0.456, 0.406], device=device).reshape(1, 3, 1, 1)
             for bid in range(B):
                 plt.figure(figsize=(10, 10))
                 plt.imshow((masked_depths[bid, ..., 0] / depths.max() * 255).cpu().numpy(), cmap=plt.cm.binary)
@@ -208,11 +215,14 @@ if __name__ == '__main__':
                 plt.show()
 
                 plt.figure(figsize=(10, 10))
-                plt.imshow((torch.permute(rgb[bid, :3, ...], (1, 2, 0))).cpu().numpy())
+                plt.imshow((torch.permute(denorm_rgb[bid, :3, ...], (1, 2, 0))).cpu().numpy())
                 plt.axis("off")
                 plt.show()
 
-        # TODO: get NOCS
+                plt.figure(figsize=(10, 10))
+                plt.imshow((masked_nocs[bid, ..., :3]).cpu().numpy())
+                plt.axis("off")
+                plt.show()
 
         # TODO: save depth images
         processed_depths = depths * depth_scale
