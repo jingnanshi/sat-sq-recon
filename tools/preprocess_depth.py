@@ -152,6 +152,7 @@ if __name__ == '__main__':
     cfg.DATASET.SPLIT_CSV = "splits.csv"
     # do not scale the image down
     cfg.DATASET.IMAGE_SIZE = (256, 256)
+    cfg.TRAIN.WORKERS = 5
     cfg.freeze()
 
     # -=-=-=-=-=- CREATE DATASET STRUCTURE -=-=-=-=-=- #
@@ -204,23 +205,24 @@ if __name__ == '__main__':
             "trans"].to(device), batch["mesh"].to(device), batch['mask'].to(device), \
             batch['image'].to(device), batch['model_idx'], batch['base_filename']
 
-        # rotation and translation for rendering
-        rot_render = torch.bmm(gt_rot.transpose(1, 2), Rz.repeat(gt_rot.shape[0], 1, 1)).detach()
-        trans_render = gt_trans
-
         # nocs rendering
-        nocs_textures = make_NOCS_vertex_textures(gt_mesh)
-        nocs_mesh = gt_mesh.clone()
-        nocs_mesh.textures = nocs_textures
-        nocs = nocs_renderer(nocs_mesh, R=rot_render, T=trans_render)
-        nocs[:, :, :, -1] = gt_masks
+        with torch.no_grad():
+            # rotation and translation for rendering
+            rot_render = torch.bmm(gt_rot.transpose(1, 2), Rz.repeat(gt_rot.shape[0], 1, 1)).detach()
+            trans_render = gt_trans
 
-        # depth rendering
-        # (N, H, W, K)
-        depths = depth_renderer(gt_mesh, R=rot_render, T=trans_render)
+            nocs_textures = make_NOCS_vertex_textures(gt_mesh)
+            nocs_mesh = gt_mesh.clone()
+            nocs_mesh.textures = nocs_textures
+            nocs = nocs_renderer(nocs_mesh, R=rot_render, T=trans_render)
+            nocs[:, :, :, -1] = gt_masks
 
-        # reset unknown depths to zero instead of zfar
-        depths[depths == zfar] = 0
+            # depth rendering
+            # (N, H, W, K)
+            depths = depth_renderer(gt_mesh, R=rot_render, T=trans_render)
+
+            # reset unknown depths to zero instead of zfar
+            depths[depths == zfar] = 0
 
         if args.visualize:
             masked_depths = depths * gt_masks.unsqueeze(-1)

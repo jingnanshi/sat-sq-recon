@@ -74,7 +74,7 @@ def get_dataloader(cfg, split='train', distributed=False, output_mesh=True):
         shuffle = False
         num_workers = min(cfg.TEST.BATCH_SIZE_PER_GPU, cfg.TRAIN.WORKERS)
     elif split == 'all':
-        images_per_gpu = 5
+        images_per_gpu = 20
         shuffle = False
         num_workers = min(cfg.TEST.BATCH_SIZE_PER_GPU, cfg.TRAIN.WORKERS)
     else:
