@@ -42,13 +42,13 @@ def parse_args():
                         default=None,
                         nargs=argparse.REMAINDER)
 
-    parser.add_argument("--not_skip_surface_points",
-                        help="Prepare depth maps for the SE3PR dataset",
-                        action="store_false")
+    parser.add_argument("--skip_surface_points",
+                        help="Skip surface points gen",
+                        action="store_true")
 
-    parser.add_argument("--not_skip_occupancy",
-                        help="Prepare depth maps for the SE3PR dataset",
-                        action="store_false")
+    parser.add_argument("--skip_occupancy",
+                        help="Skip occupancy gen",
+                        action="store_true")
 
     args = parser.parse_args()
 
@@ -75,7 +75,7 @@ if __name__ == '__main__':
         d = dataset.datasets[idx]
 
         # ---------- (1) Sample points on the surface
-        if not args.not_skip_surface_points:
+        if not args.skip_surface_points:
             points = sample_points_from_meshes(d.mesh, num_samples=N)  # [1 x N x 3]
             np.savez(str(d.path_to_surface_points), points=points.numpy())
 
@@ -85,7 +85,7 @@ if __name__ == '__main__':
             )
 
         # ---------- (2) Sample points inside the surface
-        if not args.not_skip_occupancy:
+        if not args.skip_occupancy:
             mesh_gt = trimesh.load(d.path_to_mesh_file, force='mesh')
 
             # assert mesh_gt.is_watertight, f'Model {d.tag} is not watertight'
