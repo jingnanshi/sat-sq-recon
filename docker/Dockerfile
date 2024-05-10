@@ -47,4 +47,4 @@ RUN micromamba create -qy -n base -f /app/conda-linux-64.lock \
 RUN ln -s "$CONDA_PREFIX/lib/libnvrtc.so.11.8.89" "$CONDA_PREFIX/lib/libnvrtc.so"
 
 # Set the default command to python3.
-CMD ["python3"]
+CMD ["bash"]
