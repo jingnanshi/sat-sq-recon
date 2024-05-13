@@ -184,7 +184,7 @@ def evaluate(cfg):
     # ******************************************************************************** #
     # ---------- Build Dataset
     # ******************************************************************************** #
-    dataset = build_dataset(cfg, split=args.split)
+    dataset = build_dataset(cfg, split=args.split, output_mesh=False)
 
     # ******************************************************************************** #
     # ---------- Get Some Results
@@ -198,10 +198,13 @@ def evaluate(cfg):
         args.imageidx = random.randrange(dataset.num_images_per_model)
 
     # Get batch
-    batch = dataset._get_item(args.modelidx, imgidx=args.imageidx)
+    obatch = dataset._get_item(args.modelidx, imgidx=args.imageidx)
 
     # To CUDA
-    batch = {k: v.unsqueeze(0).to(device, non_blocking=True) for k, v in batch.items()}
+    batch = {}
+    for k, v in obatch.items():
+        if type(v) is not str:
+            batch[k] = v.unsqueeze(0).to(device, non_blocking=True)
 
     # Inference
     mesh_pr, pcl_pr, mask_pr, occupancy_pr, metrics = inference(args, cfg, net, batch)
