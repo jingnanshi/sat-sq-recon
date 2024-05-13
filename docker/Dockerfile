@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     git \
     bzip2 \
     libx11-6 \
+    build-essential \
  && rm -rf /var/lib/apt/lists/*
 
 # Create a working directory.
@@ -29,22 +30,21 @@ RUN mkdir $HOME/.cache $HOME/.config \
  && chmod -R 777 $HOME
 
 # Download and install Micromamba.
-RUN curl -sL https://micro.mamba.pm/api/micromamba/linux-64/1.1.0 \
-  | sudo tar -xvj -C /usr/local bin/micromamba
-ENV MAMBA_EXE=/usr/local/bin/micromamba \
-    MAMBA_ROOT_PREFIX=/home/user/micromamba \
-    CONDA_PREFIX=/home/user/micromamba \
-    PATH=/home/user/micromamba/bin:$PATH
+RUN curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh" \
+  && bash Miniforge3-$(uname)-$(uname -m).sh -b -p "${HOME}/conda"
+RUN bash "${HOME}/conda/etc/profile.d/conda.sh" && bash "${HOME}/conda/etc/profile.d/mamba.sh"
+
+#RUN curl -sL https://micro.mamba.pm/api/micromamba/linux-64/1.1.0 \
+#  | sudo tar -xvj -C /usr/local bin/micromamba
+ENV MAMBA_ROOT_PREFIX=${HOME}/conda \
+    CONDA_PREFIX=${HOME}/conda \
+    PATH=${HOME}/.local/bin:${HOME}/conda/bin:$PATH
 
 # Set up the base Conda environment by installing PyTorch and friends.
-COPY conda-linux-64.lock /app/conda-linux-64.lock
-RUN micromamba create -qy -n base -f /app/conda-linux-64.lock \
- && rm /app/conda-linux-64.lock \
- && micromamba shell init --shell=bash --prefix="$MAMBA_ROOT_PREFIX" \
- && micromamba clean -qya
+RUN python3 -m pip install --user pipx && python3 -m pipx ensurepath && pipx install poetry
 
-# Fix for https://github.com/pytorch/pytorch/issues/97041
-RUN ln -s "$CONDA_PREFIX/lib/libnvrtc.so.11.8.89" "$CONDA_PREFIX/lib/libnvrtc.so"
+COPY pyproject.toml /app/
+RUN poetry install && pip install -U kaleido
 
 # Set the default command to python3.
 CMD ["bash"]
