@@ -7,21 +7,22 @@ import argparse
 import numpy as np
 import random
 from pathlib import Path
+from tqdm import tqdm
 from scipy.io import savemat
 
 import torch
 from pytorch3d.structures import Meshes, Pointclouds
 from pytorch3d.transforms import so3_relative_angle
-from pytorch3d.loss       import chamfer_distance
+from pytorch3d.loss import chamfer_distance
 
 import _init_paths
 
-from configs          import cfg, update_config
-from dataset.build    import build_dataset
-from nets             import Model
-from nets.utils       import transform_world2primitive, inside_outside_function_dual
-from utils.visualize  import plot_3dmesh, plot_3dpoints, plot_occupancy_labels, imshow
-from utils.utils      import (
+from configs import cfg, update_config
+from dataset.build import build_dataset
+from nets import Model
+from nets.utils import transform_world2primitive, inside_outside_function_dual
+from utils.visualize import plot_3dmesh, plot_3dpoints, plot_occupancy_labels, imshow
+from utils.utils import (
     set_seeds_cudnn,
     initialize_cuda,
     load_camera_intrinsics
@@ -62,18 +63,17 @@ def parse_args():
 
 
 def inference(args, cfg, net, batch):
-
     with torch.no_grad():
         # In inference mode, mesh only has high-probs primitives, PCL has all
         params, mesh, pcls, trans, rot = net.forward_encoder_generator(batch["image"], train=False)
 
         # Occupancy function
-        occupancy = net.occupancy_function(batch["points_in_mesh"], params) # Fbar
+        occupancy = net.occupancy_function(batch["points_in_mesh"], params)  # Fbar
         occupancy_pr = occupancy.sigmoid().cpu() >= 0.5
 
         # ----- Diff. Render (regardless of config.)
-        R       = torch.bmm(rot.transpose(1, 2), net.Rz[0].unsqueeze(0))
-        silh    = net.renderer(mesh, R=R, T=trans)
+        R = torch.bmm(rot.transpose(1, 2), net.Rz[0].unsqueeze(0))
+        silh = net.renderer(mesh, R=R, T=trans)
         mask_pr = silh[0, ..., 3].cpu()
 
         # ----- Find points on surface of assembly
@@ -81,21 +81,21 @@ def inference(args, cfg, net, batch):
         B, N, M, _ = pcls.shape
         pts_prim = transform_world2primitive(
             pcls.view(B, M * N, -1), params._translation, params._rotation, is_dcm=True
-        ) # [B x (N x M) x M x 3]
+        )  # [B x (N x M) x M x 3]
 
         # Binary mask of whether the point is on the surface of union of primitives
-        F = inside_outside_function_dual(pts_prim, params) # [B x (N x M) x M], < 1 = inside
+        F = inside_outside_function_dual(pts_prim, params)  # [B x (N x M) x M], < 1 = inside
 
         # F >= 1 means it's either on surface or outside all surfaces
         F = F.view(B, N, M, M)
-        on_surface = (F >= 0.9).all(-1) # [B x N x M]
+        on_surface = (F >= 0.9).all(-1)  # [B x N x M]
 
         # For plots, need separate Pointclouds for different coloring
         pcl_pr = []
         for i in range(cfg.MODEL.NUM_MAX_PRIMITIVES):
             pcl_pr.append(
                 Pointclouds(
-                    [pcls[0, on_surface[0,:,i], i].cpu()]
+                    [pcls[0, on_surface[0, :, i], i].cpu()]
                 )
             )
 
@@ -115,7 +115,7 @@ def inference(args, cfg, net, batch):
         with torch.no_grad():
 
             # Pose Errors
-            metrics['eR'] = so3_relative_angle(rot, batch["rot"])[0].cpu().numpy() # [rad]
+            metrics['eR'] = so3_relative_angle(rot, batch["rot"])[0].cpu().numpy()  # [rad]
             metrics['eT'] = torch.linalg.norm(trans[0] - batch["trans"][0]).cpu().numpy()
 
             # SPEED Score
@@ -138,7 +138,7 @@ def inference(args, cfg, net, batch):
             occ_true = batch["occ_labels"].cpu().numpy() >= 0.5
 
             intersection = occ_pred & occ_true
-            union        = occ_pred | occ_true
+            union = occ_pred | occ_true
             metrics['iou_3d'] = intersection.sum() / float(union.sum())
 
             # Number of primitives
@@ -149,7 +149,7 @@ def inference(args, cfg, net, batch):
             y_true = batch['mask'][0].cpu().numpy() > 0.5
 
             intersection = y_pred & y_true
-            union        = y_pred | y_true
+            union = y_pred | y_true
 
             metrics['iou_2d'] = intersection.sum() / float(union.sum())
 
@@ -157,7 +157,6 @@ def inference(args, cfg, net, batch):
 
 
 def evaluate(cfg):
-
     args = parse_args()
     update_config(cfg, args)
 
@@ -177,7 +176,7 @@ def evaluate(cfg):
     # ---------- Build Model
     # ******************************************************************************** #
     camera = load_camera_intrinsics(cfg.DATASET.CAMERA)
-    net    = Model(cfg, fov=camera["horizontalFOV"], device=device)
+    net = Model(cfg, fov=camera["horizontalFOV"], device=device)
 
     # Load checkpoint
     load_dict = torch.load(cfg.MODEL.PRETRAIN_FILE, map_location=device)
@@ -199,31 +198,35 @@ def evaluate(cfg):
     if args.imageidx is None:
         args.imageidx = random.randrange(dataset.num_images_per_model)
 
-    # Get batch
-    obatch = dataset._get_item(args.modelidx, imgidx=args.imageidx)
+    all_metrics = []
+    for idx, obatch in tqdm(enumerate(dataset), total=len(dataset)):
+        # To CUDA
+        batch = {}
+        for k, v in obatch.items():
+            if type(v) is not str:
+                batch[k] = v.unsqueeze(0).to(device, non_blocking=True)
 
-    # To CUDA
-    batch = {}
-    for k, v in obatch.items():
-        if type(v) is not str:
-            batch[k] = v.unsqueeze(0).to(device, non_blocking=True)
+        # Inference
+        mesh_pr, pcl_pr, mask_pr, occupancy_pr, metrics = inference(args, cfg, net, batch)
 
-    # Inference
-    mesh_pr, pcl_pr, mask_pr, occupancy_pr, metrics = inference(args, cfg, net, batch)
-
-    # ---------- PLOT
-    if args.plot:
+        # ---------- PLOT
         # Input image
-        imshow(batch["image"][0], is_tensor=True, savefn=str(save_dir / "image.jpg"))
+        if args.plot:
+            imshow(batch["image"][0], is_tensor=True, savefn=str(save_dir / f"image_{idx}.jpg"))
 
-        # Mesh
-        plot_3dmesh(mesh_pr, markers_for_vertices=False, savefn=str(save_dir / "mesh.jpg"))
+            # Mesh
+            plot_3dmesh(mesh_pr, markers_for_vertices=False, savefn=str(save_dir / f"mesh_{idx}.jpg"))
 
-    # Metric
-    savemat(str(save_dir / "metrics.mat"), metrics)
+        # Metric
+        all_metrics.append(metrics)
+        #print(
+        #    f"E_T: {metrics['eT']:.2f} [m]    E_R: {np.rad2deg(metrics['eR']):.2f} [deg]    Chamfer-L1 (E-3): {metrics['chamfer_l1'] * 1000:.2f}    Num. prim.: {metrics['num_prims']}")
 
-    print(f"E_T: {metrics['eT']:.2f} [m]    E_R: {np.rad2deg(metrics['eR']):.2f} [deg]    Chamfer-L1 (E-3): {metrics['chamfer_l1'] * 1000:.2f}    Num. prim.: {metrics['num_prims']}")
+        # savemat(str(save_dir / "metrics.mat"), all_metrics)
+        if idx % 500 == 0:
+            np.save(str(save_dir / "metrics"), all_metrics, allow_pickle=True)
 
+    np.save(str(save_dir / "metrics"), all_metrics, allow_pickle=True)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     evaluate(cfg)
