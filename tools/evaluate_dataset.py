@@ -133,6 +133,24 @@ def inference(args, cfg, net, batch):
             metrics['chamfer_l2'] = chamfer_l2.cpu().numpy()
             metrics['chamfer_l1'] = chamfer_l1.cpu().numpy()
 
+            # Pose chamfer (in the camera frame)
+            est_transformed_mesh = rot @ torch.transpose(batch["points_on_mesh"], 1, 2) + trans.reshape(-1, 3, 1)
+            gt_transformed_mesh = batch["rot"] @ torch.transpose(batch["points_on_mesh"], 1, 2) + batch[
+                "trans"].reshape(-1, 3, 1)
+            est_transformed_mesh = torch.transpose(est_transformed_mesh, 1, 2)
+            gt_transformed_mesh = torch.transpose(gt_transformed_mesh, 1, 2)
+
+            pose_chamfer_l2, _ = chamfer_distance(
+                est_transformed_mesh, gt_transformed_mesh, point_reduction='mean', norm=2
+            )
+
+            pose_chamfer_l1, _ = chamfer_distance(
+                est_transformed_mesh, gt_transformed_mesh, point_reduction='mean', norm=1
+            )
+
+            metrics['pose_chamfer_l2'] = pose_chamfer_l2.cpu().numpy()
+            metrics['pose_chamfer_l1'] = pose_chamfer_l1.cpu().numpy()
+
             # 3D volumetric IoU
             occ_pred = occupancy[0].any(dim=-1).sigmoid().cpu().numpy() >= 0.5
             occ_true = batch["occ_labels"].cpu().numpy() >= 0.5
@@ -219,7 +237,7 @@ def evaluate(cfg):
 
         # Metric
         all_metrics.append(metrics)
-        #print(
+        # print(
         #    f"E_T: {metrics['eT']:.2f} [m]    E_R: {np.rad2deg(metrics['eR']):.2f} [deg]    Chamfer-L1 (E-3): {metrics['chamfer_l1'] * 1000:.2f}    Num. prim.: {metrics['num_prims']}")
 
         # savemat(str(save_dir / "metrics.mat"), all_metrics)
@@ -227,6 +245,7 @@ def evaluate(cfg):
             np.save(str(save_dir / "metrics"), all_metrics, allow_pickle=True)
 
     np.save(str(save_dir / "metrics"), all_metrics, allow_pickle=True)
+
 
 if __name__ == "__main__":
     evaluate(cfg)
