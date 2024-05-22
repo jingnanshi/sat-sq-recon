@@ -208,6 +208,7 @@ def evaluate(cfg):
 
         # Inference
         mesh_pr, pcl_pr, mask_pr, occupancy_pr, metrics = inference(args, cfg, net, batch)
+        metrics["model_name"] = obatch['model_names']
 
         # ---------- PLOT
         # Input image
